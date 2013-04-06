@@ -14,7 +14,8 @@ import qualified Data.ByteString.Char8 as B
 import Snap.Core
 import Snap.Http.Server
 import System.Random
-import Text.JSON
+import Data.Aeson as Aeson
+import Data.Text (Text)
 
 main :: IO ()
 main = do
@@ -50,7 +51,7 @@ site pool = route [ ("json", jsonHandler)
 jsonHandler :: Snap ()
 jsonHandler = do
     modifyResponse (setContentType "application/json")
-    writeBS $ B.pack $ encode $ toJSObject [("message", "Hello, World!" :: String)]
+    writeLBS . encode $ "message" .= ("Hello, World!" :: Text) 
 
 dbHandler :: IConnection a => Pool a -> Snap ()
 dbHandler pool = do
@@ -64,28 +65,27 @@ dbHandler pool = do
 dbHandler' :: IConnection a => Pool a -> Int -> Snap ()
 dbHandler' pool i = do
     rows <- liftIO $ withResource pool runQuery
-    writeBS $ B.pack $ encode $ map jsonRow $ concat rows
+    writeLBS . encode $ map jsonRow $ concat rows
     where runQuery conn = replicateM i $ do
               (ix,_) <- randomR (1, 10000 :: Int32) <$> newStdGen
               withSB $ quickQuery' conn query [SqlInt32 ix]
           withSB = withRTSSignalsBlocked
           query = "SELECT * FROM World where id=?"
 
-jsonRow :: [SqlValue] -> JSValue
-jsonRow [i, v] = JSObject $ toJSObject [("id", showJSON i), ("randomNumber", showJSON v)]
-jsonRow _ = JSNull
+jsonRow :: [SqlValue] -> Value
+jsonRow [i, v] = object ["id" .= i, "randomNumber" .= v]
+jsonRow _ = Null
 
-instance JSON SqlValue where
-    readJSON = undefined -- Poor form, but unneeded
-    showJSON v = case v of -- We're just doing the obvious stuff since this is a 1-off
-        SqlString s -> JSString $ toJSString s
-        SqlByteString s -> showJSON s
-        SqlWord32 i -> showJSON i
-        SqlWord64 i -> showJSON i
-        SqlInt32 i -> showJSON i
-        SqlInt64 i -> showJSON i
-        SqlInteger i -> showJSON i
-        SqlChar c -> showJSON c
-        SqlBool b -> showJSON b
-        SqlDouble d -> showJSON d
-        _ -> JSNull
+instance ToJSON SqlValue where
+    toJSON v = case v of -- We're just doing the obvious stuff since this is a 1-off
+        SqlString s -> toJSON s
+        SqlByteString s -> toJSON s
+        SqlWord32 i -> toJSON i
+        SqlWord64 i -> toJSON i
+        SqlInt32 i -> toJSON i
+        SqlInt64 i -> toJSON i
+        SqlInteger i -> toJSON i
+        SqlChar c -> toJSON c
+        SqlBool b -> toJSON b
+        SqlDouble d -> toJSON d
+        _ -> Null
